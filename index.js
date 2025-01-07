@@ -33,72 +33,97 @@ app.post("/scrape", async (req, res) => {
   await page.type("#searchboxinput", searchQuery);
   await page.click("#searchbox-searchbutton");
 
-  // Wait for search results container
   await page.waitForSelector(".m6QErb.DxyBCb.kA9KIf.dS8AEf", { visible: true });
 
-  let results = [];
-  let endOfList = false;
+  await page.waitForSelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]', { visible: true });
 
-  while (!endOfList) {
-    // Extract data
-    const newResults = await page.evaluate(() => {
-      const businesses = [];
-      const items = document.querySelectorAll(
-        ".m6QErb.DxyBCb.kA9KIf.dS8AEf .Nv2PK"
-      );
+  // First get the scroll height and log it
+  const scrollableHeight = await page.evaluate(() => {
+    const scrollableDiv = document.querySelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]');
+    console.log('Scrollable div height:', scrollableDiv.scrollHeight);
+    return scrollableDiv.scrollHeight;
+  });
 
-      items.forEach((item) => {
-        const name =
-          item.querySelector(".qBF1Pd.fontHeadlineSmall")?.textContent || "N/A";
-        const link = item.querySelector("a.hfpxzc")?.href || "N/A";
-        const ratingStars = item.querySelector(".MW4etd")?.textContent || "N/A";
-        const numberOfRatings =
-          item.querySelector(".UY7F9")?.textContent || "N/A";
-        const phone = item.querySelector(".UsdlK")?.textContent || "N/A";
+  // Scroll to the bottom
+  await page.evaluate(async () => {
+    const scrollableDiv = document.querySelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]');
+    
+    // Scroll in small steps to trigger loading of more results
+    const scrollStep = 300;
+    let lastHeight = scrollableDiv.scrollHeight;
+    let attempts = 0;
+    const maxAttempts = 20; // Prevent infinite loops
+    
+    while (attempts < maxAttempts) {
+      scrollableDiv.scrollTo(0, scrollableDiv.scrollHeight);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased wait time
+      
+      if (scrollableDiv.scrollHeight === lastHeight) {
+        attempts++;
+      } else {
+        attempts = 0; // Reset attempts if we find new content
+      }
+      
+      lastHeight = scrollableDiv.scrollHeight;
+    }
+  });
 
-        const categoryandaddressParentDiv = item.querySelectorAll(".UaQhfb .W4Efsd");
+  // Now get results after scrolling
+  const results = await page.evaluate(() => {
+    const businesses = [];
+    const items = document.querySelectorAll(
+      '.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"] .Nv2PK'
+    );
 
-        const children2 = Array.from(categoryandaddressParentDiv[2]?.children || []).map(child => child.textContent.trim());
+    items.forEach((item) => {
+      const name =
+        item.querySelector(".qBF1Pd.fontHeadlineSmall")?.textContent || "N/A";
+      const link = item.querySelector("a.hfpxzc")?.href || "N/A";
+      const ratingStars = item.querySelector(".MW4etd")?.textContent || "N/A";
+      const numberOfRatings =
+        item.querySelector(".UY7F9")?.textContent || "N/A";
+      const phone = item.querySelector(".UsdlK")?.textContent || "N/A";
+      const temporarilyClosedText = item.querySelector(".eXlrNe")?.textContent || "N/A";
+      const temporarilyClosed = temporarilyClosedText.includes("Temporarily closed");
 
-        const category = children2[0] || "N/A";
-        const address = (children2[1] || "") + (children2[2] || "");
+      const categoryandaddressParentDiv =
+        item.querySelectorAll(".UaQhfb .W4Efsd");
 
-        const website = item.querySelector("a.lcr4fd")?.href || "N/A";
+      // Extract children details
+      const children2 = Array.from(
+        categoryandaddressParentDiv[2]?.children || []
+      ).map((child) => child.textContent.trim());
 
-        businesses.push({
-          name,
-          link,
-          ratingStars,
-          numberOfRatings,
-          phone,
-          category: category.replace(/ · /g, '').trim(),
-          address: address.replace(/ · /g, '').replace(/·/g, '').trim(),
-          website
-        });
+      // Extract category and address from children2
+      const category = children2[0] || "N/A";
+      const address = (children2[1] || "") + (children2[2] || "");
+
+      const website = item.querySelector("a.lcr4fd")?.href || "N/A";
+
+      businesses.push({
+        name,
+        link,
+        ratingStars,
+        numberOfRatings,
+        phone,
+        temporarilyClosed,
+        category: category.replace(/ · /g, "").trim(),
+        address: address.replace(/ · /g, "").replace(/·/g, "").trim(),
+        website,
       });
-
-      return businesses;
     });
 
-    results = results.concat(newResults);
-
-    // Scroll down to load more results
-    await page.evaluate(() => {
-      window.scrollBy(0, window.innerHeight);
-    });
-
-    // Wait for new content to load
-    await page.waitForNetworkIdle(5000);
-
-    // Check if the end of the list is reached
-    endOfList = await page.evaluate(() => {
-      return !!document.querySelector('.HlvSq');
-    });
-  }
+    return businesses;
+  });
 
   await browser.close();
 
-  return res.json({ results, count: results.length });
+  return res.json({
+    itemsHeight: scrollableHeight,
+    scrollHeight: scrollableHeight,
+    results,
+    count: results.length,
+  });
 });
 
 app.listen(PORT, () => {
