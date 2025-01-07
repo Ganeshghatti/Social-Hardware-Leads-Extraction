@@ -36,6 +36,11 @@ app.get("/test", (req, res) => {
   res.json({ message: "Server is running successfully!" });
 });
 
+app.get("/ip", async (req, res) => {
+  const ip = await getPublicIP();
+  res.json({ ip });
+});
+
 app.post("/scrape", async (req, res) => {
   try {
     // Get IP before scraping
@@ -169,7 +174,7 @@ app.post("/scrape", async (req, res) => {
     });
 
     await browser.close();
-    console.log(results);
+    console.log("Got scraped data");
     return res.json({
       itemsHeight: scrollableHeight,
       scrollHeight: scrollableHeight,
