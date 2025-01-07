@@ -24,8 +24,24 @@ app.use((req, res, next) => {
 // Add IP check function
 async function getPublicIP() {
   try {
-    const response = await axios.get('https://api.ipify.org?format=json');
-    return response.data.ip;
+    // Try multiple IP checking services
+    const services = [
+      'https://api.ipify.org?format=json',
+      'https://ifconfig.me/ip',
+      'https://api.myip.com'
+    ];
+
+    for (const service of services) {
+      try {
+        const response = await axios.get(service, { timeout: 5000 });
+        if (response.data) {
+          return typeof response.data === 'string' ? response.data : response.data.ip;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    throw new Error('Could not get IP from any service');
   } catch (error) {
     console.error('Error getting IP:', error);
     return null;
