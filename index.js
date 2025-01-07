@@ -3,6 +3,7 @@ const puppeteer = require("puppeteer");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const dotenv = require("dotenv");
+const axios = require("axios");
 
 const app = express();
 dotenv.config();
@@ -20,12 +21,27 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add IP check function
+async function getPublicIP() {
+  try {
+    const response = await axios.get('https://api.ipify.org?format=json');
+    return response.data.ip;
+  } catch (error) {
+    console.error('Error getting IP:', error);
+    return null;
+  }
+}
+
 app.get("/test", (req, res) => {
   res.json({ message: "Server is running successfully!" });
 });
 
 app.post("/scrape", async (req, res) => {
   try {
+    // Get IP before scraping
+    const currentIP = await getPublicIP();
+    console.log('Current IP Address:', currentIP);
+
     const { location, industry } = req.body;
 
     if (!location || !industry) {
