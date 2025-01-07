@@ -13,6 +13,10 @@ app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
 
+app.get("/test", (req, res) => {
+  res.json({ message: "Server is running successfully!" });
+});
+
 app.post("/scrape", async (req, res) => {
   try {
     const { location, industry } = req.body;
@@ -28,16 +32,16 @@ app.post("/scrape", async (req, res) => {
     const browser = await puppeteer.launch({
       headless: false,
       args: [
-        '--lang=en-US', 
-        '--disable-setuid-sandbox',
-        '--window-size=1920,1080',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
+        "--lang=en-US",
+        "--disable-setuid-sandbox",
+        "--window-size=1920,1080",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
       ],
-      defaultViewport: null, 
+      defaultViewport: null,
     });
-    
+
     const page = await browser.newPage();
 
     await page.goto(url, { waitUntil: "networkidle2" });
@@ -47,37 +51,46 @@ app.post("/scrape", async (req, res) => {
     await page.type("#searchboxinput", searchQuery);
     await page.click("#searchbox-searchbutton");
 
-    await page.waitForSelector(".m6QErb.DxyBCb.kA9KIf.dS8AEf", { visible: true });
+    await page.waitForSelector(".m6QErb.DxyBCb.kA9KIf.dS8AEf", {
+      visible: true,
+    });
 
-    await page.waitForSelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]', { visible: true });
+    await page.waitForSelector(
+      '.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]',
+      { visible: true }
+    );
 
     // First get the scroll height and log it
     const scrollableHeight = await page.evaluate(() => {
-      const scrollableDiv = document.querySelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]');
-      console.log('Scrollable div height:', scrollableDiv.scrollHeight);
+      const scrollableDiv = document.querySelector(
+        '.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]'
+      );
+      console.log("Scrollable div height:", scrollableDiv.scrollHeight);
       return scrollableDiv.scrollHeight;
     });
 
     // Scroll to the bottom
     await page.evaluate(async () => {
-      const scrollableDiv = document.querySelector('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]');
-      
+      const scrollableDiv = document.querySelector(
+        '.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd[role="feed"]'
+      );
+
       // Scroll in small steps to trigger loading of more results
       const scrollStep = 300;
       let lastHeight = scrollableDiv.scrollHeight;
       let attempts = 0;
       const maxAttempts = 20; // Prevent infinite loops
-      
+
       while (attempts < maxAttempts) {
         scrollableDiv.scrollTo(0, scrollableDiv.scrollHeight);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Increased wait time
-        
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Increased wait time
+
         if (scrollableDiv.scrollHeight === lastHeight) {
           attempts++;
         } else {
           attempts = 0; // Reset attempts if we find new content
         }
-        
+
         lastHeight = scrollableDiv.scrollHeight;
       }
     });
@@ -97,8 +110,10 @@ app.post("/scrape", async (req, res) => {
         const numberOfRatings =
           item.querySelector(".UY7F9")?.textContent || "N/A";
         const phone = item.querySelector(".UsdlK")?.textContent || "N/A";
-        const temporarilyClosedText = item.querySelector(".eXlrNe")?.textContent || "N/A";
-        const temporarilyClosed = temporarilyClosedText.includes("Temporarily closed");
+        const temporarilyClosedText =
+          item.querySelector(".eXlrNe")?.textContent || "N/A";
+        const temporarilyClosed =
+          temporarilyClosedText.includes("Temporarily closed");
 
         const categoryandaddressParentDiv =
           item.querySelectorAll(".UaQhfb .W4Efsd");
@@ -140,7 +155,7 @@ app.post("/scrape", async (req, res) => {
     });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({ error: 'An error occurred while scraping' });
+    return res.status(500).json({ error: "An error occurred while scraping" });
   }
 });
 
