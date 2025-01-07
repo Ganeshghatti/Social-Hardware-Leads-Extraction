@@ -13,6 +13,13 @@ app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
 
+// Add timeout settings
+app.use((req, res, next) => {
+  req.setTimeout(600000);
+  res.setTimeout(600000);
+  next();
+});
+
 app.get("/test", (req, res) => {
   res.json({ message: "Server is running successfully!" });
 });
