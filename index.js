@@ -30,7 +30,10 @@ app.post("/scrape", async (req, res) => {
       args: [
         '--lang=en-US', 
         '--disable-setuid-sandbox',
+        '--window-size=1920,1080',
         '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage'
       ],
       defaultViewport: null, 
     });
