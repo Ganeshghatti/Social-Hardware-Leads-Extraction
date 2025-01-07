@@ -30,7 +30,7 @@ app.post("/scrape", async (req, res) => {
     const url = `https://www.google.com/maps?hl=en`;
 
     const browser = await puppeteer.launch({
-      headless: false,
+      headless: true,
       args: [
         "--lang=en-US",
         "--disable-setuid-sandbox",
