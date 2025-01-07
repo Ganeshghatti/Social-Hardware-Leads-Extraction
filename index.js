@@ -146,7 +146,7 @@ app.post("/scrape", async (req, res) => {
     });
 
     await browser.close();
-
+    console.log(results);
     return res.json({
       itemsHeight: scrollableHeight,
       scrollHeight: scrollableHeight,
