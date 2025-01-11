@@ -4,6 +4,7 @@
   "description": "Scrape Google Maps data for businesses",
   "main": "index.js",
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "axios": "^1.7.9",
     "axis": "^1.0.0",
     "body-parser": "^1.20.3",
