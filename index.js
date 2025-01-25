@@ -22,7 +22,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add IP check function
 async function getPublicIP() {
   try {
     // Try multiple IP checking services
@@ -59,32 +58,33 @@ app.post("/single-email-finder", async (req, res) => {
 
   try {
     // Updated email regex to include .co.in and other TLDs
-    const emailRegex = /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g;
+    const emailRegex =
+      /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g;
 
     // First scrape the homepage
-    console.log('Scraping homepage:', domain);
+    console.log("Scraping homepage:", domain);
     await page.goto(domain, { waitUntil: "networkidle2", timeout: 30000 });
     await page.waitForNetworkIdle(10000);
     const content = await page.content();
     const foundEmails = content.match(emailRegex) || [];
-    foundEmails.forEach(email => allEmails.add(email));
+    foundEmails.forEach((email) => allEmails.add(email));
 
     // Get all internal links
-    console.log('Extracting internal links...');
+    console.log("Extracting internal links...");
     const allLinks = await page.evaluate(() => {
       const links = [];
       const currentHost = window.location.hostname;
-      
-      document.querySelectorAll('a').forEach(link => {
+
+      document.querySelectorAll("a").forEach((link) => {
         try {
           const href = link.href;
           if (!href) return;
 
           const url = new URL(href);
-          if (url.hostname === currentHost && href.startsWith('http')) {
+          if (url.hostname === currentHost && href.startsWith("http")) {
             links.push({
               href: href,
-              text: link.textContent.trim().toLowerCase()
+              text: link.textContent.trim().toLowerCase(),
             });
           }
         } catch (e) {
@@ -94,18 +94,18 @@ app.post("/single-email-finder", async (req, res) => {
       return links;
     });
 
-    console.log('Found links:', allLinks);
+    console.log("Found links:", allLinks);
 
     // Determine which URLs to scrape
     let urlsToScrape = [];
-    
+
     if (allLinks.length <= 3) {
       // If 3 or fewer links, use all of them
-      urlsToScrape = allLinks.map(link => link.href);
-      console.log('Using all available links:', urlsToScrape);
+      urlsToScrape = allLinks.map((link) => link.href);
+      console.log("Using all available links:", urlsToScrape);
     } else {
       // If more than 3 links, use Gemini to shortlist
-      console.log('More than 3 links found, using Gemini to shortlist...');
+      console.log("More than 3 links found, using Gemini to shortlist...");
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -115,53 +115,54 @@ app.post("/single-email-finder", async (req, res) => {
 
       const result = await model.generateContent(prompt);
       const response = result.response.text();
-      console.log('Raw Gemini response:', response);
+      console.log("Raw Gemini response:", response);
 
       // Clean and parse Gemini response
-      const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
-      console.log('Cleaned response:', cleanResponse);
-      
+      const cleanResponse = response.replace(/```json\n?|\n?```/g, "").trim();
+      console.log("Cleaned response:", cleanResponse);
+
       urlsToScrape = JSON.parse(cleanResponse);
-      console.log('Gemini suggested URLs:', urlsToScrape);
+      console.log("Gemini suggested URLs:", urlsToScrape);
     }
 
     // Scrape each selected page
     for (const url of urlsToScrape) {
-      console.log('Scraping URL:', url);
+      console.log("Scraping URL:", url);
       try {
         await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
         await page.waitForNetworkIdle(10000);
         const pageContent = await page.content();
         const pageEmails = pageContent.match(emailRegex) || [];
-        pageEmails.forEach(email => allEmails.add(email));
+        pageEmails.forEach((email) => allEmails.add(email));
       } catch (error) {
         console.error(`Error scraping ${url}:`, error);
       }
     }
 
     // Filter and validate emails
-    const validEmails = Array.from(allEmails).filter(email => {
+    const validEmails = Array.from(allEmails).filter((email) => {
       try {
-        return email.includes('@') && 
-               email.includes('.') && 
-               email.length > 4 && 
-               !email.includes('..') &&
-               !email.startsWith('.') &&
-               !email.endsWith('.') &&
-               /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        return (
+          email.includes("@") &&
+          email.includes(".") &&
+          email.length > 4 &&
+          !email.includes("..") &&
+          !email.startsWith(".") &&
+          !email.endsWith(".") &&
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        );
       } catch {
         return false;
       }
     });
 
     console.log(`Emails found on ${domain} and related pages:`, validEmails);
-    res.json({ 
+    res.json({
       emails: validEmails,
       scrapedPages: [domain, ...urlsToScrape],
       allLinks: allLinks,
-      totalEmailsFound: validEmails.length
+      totalEmailsFound: validEmails.length,
     });
-
   } catch (error) {
     console.error(`Error in email scraping:`, error);
     res.status(500).json({ error: "Failed to scrape emails" });
@@ -349,15 +350,18 @@ app.post("/scrape", async (req, res) => {
 app.post("/bulk-email-finder", async (req, res) => {
   const { domains } = req.body; // Array of {_id, domain} objects
   console.log(`Received domains for processing:`, domains);
-  
+
   // Immediately respond that batch processing has started
-  res.json({ message: "Batch processing started", domainsCount: domains.length });
+  res.json({
+    message: "Batch processing started",
+    domainsCount: domains.length,
+  });
   console.log(`Batch processing started for ${domains.length} domains`);
 
   // Process domains in batches of 10
   const batchSize = 5;
   const batches = [];
-  
+
   for (let i = 0; i < domains.length; i += batchSize) {
     batches.push(domains.slice(i, i + batchSize));
   }
@@ -366,7 +370,7 @@ app.post("/bulk-email-finder", async (req, res) => {
   // Process each batch
   for (let [batchIndex, batch] of batches.entries()) {
     console.log(`Processing batch ${batchIndex + 1} of ${batches.length}`);
-    
+
     // Process domains in current batch concurrenly
     const batchResults = await Promise.all(
       batch.map(async ({ _id, domain }) => {
@@ -377,28 +381,37 @@ app.post("/bulk-email-finder", async (req, res) => {
           const allEmails = new Set();
 
           // Updated email regex
-          const emailRegex = /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g
+          const emailRegex =
+            /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g;
 
           // Scrape homepage
           console.log(`Scraping homepage: ${domain}`);
-          await page.goto(domain, { waitUntil: "networkidle2", timeout: 30000 });
+          await page.goto(domain, {
+            waitUntil: "networkidle2",
+            timeout: 30000,
+          });
           await page.waitForNetworkIdle(5000);
-          
+
           // Get page content for emails and company description
           const content = await page.content();
           console.log(`Page content retrieved for ${domain}`);
           const pageText = await page.evaluate(() => document.body.innerText);
           const foundEmails = content.match(emailRegex) || [];
-          foundEmails.forEach(email => allEmails.add(email));
+          foundEmails.forEach((email) => allEmails.add(email));
           console.log(`Found emails on homepage: ${foundEmails.length}`);
 
           // Get company description from Gemini
           const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
           const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-          const descriptionPrompt = `Based on this website content, write 2-3 clear, concise descriptions (2-3 sentences each) about the company/website. Focus on their main business, value proposition, and unique features. Content: ${pageText.substring(0, 2000)}`;
-          
-          const descriptionResult = await model.generateContent(descriptionPrompt);
+          const descriptionPrompt = `Based on this website content, write 2-3 clear, concise descriptions (2-3 sentences each) about the company/website. Focus on their main business, value proposition, and unique features. Content: ${pageText.substring(
+            0,
+            2000
+          )}`;
+
+          const descriptionResult = await model.generateContent(
+            descriptionPrompt
+          );
           const companyDescriptions = descriptionResult.response.text();
           console.log(`Company descriptions generated for ${domain}`);
 
@@ -406,16 +419,16 @@ app.post("/bulk-email-finder", async (req, res) => {
           const allLinks = await page.evaluate(() => {
             const links = [];
             const currentHost = window.location.hostname;
-            
-            document.querySelectorAll('a').forEach(link => {
+
+            document.querySelectorAll("a").forEach((link) => {
               try {
                 const href = link.href;
                 if (!href) return;
                 const url = new URL(href);
-                if (url.hostname === currentHost && href.startsWith('http')) {
+                if (url.hostname === currentHost && href.startsWith("http")) {
                   links.push({
                     href: href,
-                    text: link.textContent.trim().toLowerCase()
+                    text: link.textContent.trim().toLowerCase(),
                   });
                 }
               } catch (e) {}
@@ -427,7 +440,7 @@ app.post("/bulk-email-finder", async (req, res) => {
           // Determine pages to scrape
           let urlsToScrape = [];
           if (allLinks.length <= 3) {
-            urlsToScrape = allLinks.map(link => link.href);
+            urlsToScrape = allLinks.map((link) => link.href);
             console.log(`Using all ${urlsToScrape.length} links for scraping`);
           } else {
             const linksPrompt = `Analyze these URLs and return exactly 3 URLs that are most likely to contain email addresses. Focus on pages like 'Contact', 'About', 'Team', etc.
@@ -436,7 +449,9 @@ app.post("/bulk-email-finder", async (req, res) => {
 
             const linksResult = await model.generateContent(linksPrompt);
             const response = linksResult.response.text();
-            urlsToScrape = JSON.parse(response.replace(/```json\n?|\n?```/g, '').trim());
+            urlsToScrape = JSON.parse(
+              response.replace(/```json\n?|\n?```/g, "").trim()
+            );
             console.log(`Selected URLs for scraping: ${urlsToScrape.length}`);
           }
 
@@ -444,11 +459,14 @@ app.post("/bulk-email-finder", async (req, res) => {
           for (const url of urlsToScrape) {
             try {
               console.log(`Scraping additional URL: ${url}`);
-              await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+              await page.goto(url, {
+                waitUntil: "networkidle2",
+                timeout: 30000,
+              });
               await page.waitForNetworkIdle(5000);
               const pageContent = await page.content();
               const pageEmails = pageContent.match(emailRegex) || [];
-              pageEmails.forEach(email => allEmails.add(email));
+              pageEmails.forEach((email) => allEmails.add(email));
               console.log(`Found emails on ${url}: ${pageEmails.length}`);
             } catch (error) {
               console.error(`Error scraping ${url}:`, error);
@@ -456,20 +474,24 @@ app.post("/bulk-email-finder", async (req, res) => {
           }
 
           // Filter and validate emails
-          const validEmails = Array.from(allEmails).filter(email => {
+          const validEmails = Array.from(allEmails).filter((email) => {
             try {
-              return email.includes('@') && 
-                     email.includes('.') && 
-                     email.length > 4 && 
-                     !email.includes('..') &&
-                     !email.startsWith('.') &&
-                     !email.endsWith('.') &&
-                     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+              return (
+                email.includes("@") &&
+                email.includes(".") &&
+                email.length > 4 &&
+                !email.includes("..") &&
+                !email.startsWith(".") &&
+                !email.endsWith(".") &&
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+              );
             } catch {
               return false;
             }
           });
-          console.log(`Valid emails found for ${domain}: ${validEmails.length}`);
+          console.log(
+            `Valid emails found for ${domain}: ${validEmails.length}`
+          );
 
           await browser.close();
           console.log(`Browser closed for ${domain}`);
@@ -481,9 +503,8 @@ app.post("/bulk-email-finder", async (req, res) => {
             emails: validEmails,
             scrapedPages: [domain, ...urlsToScrape],
             totalEmailsFound: validEmails.length,
-            companyDescriptions
+            companyDescriptions,
           };
-
         } catch (error) {
           console.error(`Error processing ${domain}:`, error);
           return {
@@ -491,7 +512,7 @@ app.post("/bulk-email-finder", async (req, res) => {
             domain,
             success: false,
             error: "Failed to scrape emails",
-            errorDetails: error.message
+            errorDetails: error.message,
           };
         }
       })
@@ -501,20 +522,20 @@ app.post("/bulk-email-finder", async (req, res) => {
     try {
       console.log(`Sending batch results for batch ${batchIndex + 1}`);
       console.log(batchResults);
-      await axios.post('http://localhost:3000/api/leads/email/callback', {
+      await axios.post("https://www.socialhardware.in/api/leads/email/callback", {
         batch: batchResults,
         batchNumber: batchIndex + 1,
-        totalBatches: batches.length
+        totalBatches: batches.length,
       });
       console.log(`Batch ${batchIndex + 1} results sent successfully`);
     } catch (error) {
-      console.error('Error sending webhook:', error);
+      console.error("Error sending webhook:", error);
     }
 
     // Wait for 1 minute before processing next batch (if not the last batch)
     if (batchIndex < batches.length - 1) {
-      console.log('Waiting 1 minute before next batch...');
-      await new Promise(resolve => setTimeout(resolve, 60000));
+      console.log("Waiting 1 minute before next batch...");
+      await new Promise((resolve) => setTimeout(resolve, 60000));
     }
   }
 });
