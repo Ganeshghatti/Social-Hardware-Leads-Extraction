@@ -213,22 +213,22 @@ app.post("/scrape", async (req, res) => {
 
     const url = `https://www.google.com/maps?hl=en`;
 
-    // const browser = await puppeteer.launch({
-    //   headless: true,
-    //   args: [
-    //     "--lang=en-US",
-    //     "--disable-setuid-sandbox",
-    //     "--window-size=1920,1080",
-    //     "--no-sandbox",
-    //     "--disable-setuid-sandbox",
-    //     "--disable-dev-shm-usage",
-    //   ],
-    //   defaultViewport: null,
-    // });
     const browser = await puppeteer.launch({
-      headless: false,
-      args: ["--lang=en-US", "--disable-setuid-sandbox", "--no-sandbox"],
-      defaultViewport: null,
+      headless: "new",
+      args: [
+        "--lang=en-US",
+        "--disable-setuid-sandbox",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process"
+      ],
+      defaultViewport: {
+        width: 1920,
+        height: 1080
+      }
     });
     const page = await browser.newPage();
 
