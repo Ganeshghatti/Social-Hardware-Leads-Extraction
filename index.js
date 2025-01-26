@@ -539,7 +539,7 @@ app.post("/bulk-email-finder", async (req, res) => {
       console.log(`Sending batch results for batch ${batchIndex + 1}`);
       console.log(batchResults);
       await axios.post(
-        "https://www.socialhardware.in/api/leads/email/callback",
+        "https://social-hardware-admin.vercel.app/api/leads/email/callback",
         {
           batch: batchResults,
           batchNumber: batchIndex + 1,
