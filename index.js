@@ -223,12 +223,12 @@ app.post("/scrape", async (req, res) => {
         "--disable-gpu",
         "--no-first-run",
         "--no-zygote",
-        "--single-process"
+        "--single-process",
       ],
       defaultViewport: {
         width: 1920,
-        height: 1080
-      }
+        height: 1080,
+      },
     });
     const page = await browser.newPage();
 
@@ -376,7 +376,23 @@ app.post("/bulk-email-finder", async (req, res) => {
       batch.map(async ({ _id, domain }) => {
         try {
           console.log(`Launching browser for domain: ${domain}`);
-          const browser = await puppeteer.launch({ headless: false });
+          const browser = await puppeteer.launch({
+            headless: "new",
+            args: [
+              "--lang=en-US",
+              "--disable-setuid-sandbox",
+              "--no-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--no-first-run",
+              "--no-zygote",
+              "--single-process",
+            ],
+            defaultViewport: {
+              width: 1920,
+              height: 1080,
+            },
+          });
           const page = await browser.newPage();
           const allEmails = new Set();
 
@@ -522,11 +538,14 @@ app.post("/bulk-email-finder", async (req, res) => {
     try {
       console.log(`Sending batch results for batch ${batchIndex + 1}`);
       console.log(batchResults);
-      await axios.post("https://www.socialhardware.in/api/leads/email/callback", {
-        batch: batchResults,
-        batchNumber: batchIndex + 1,
-        totalBatches: batches.length,
-      });
+      await axios.post(
+        "https://www.socialhardware.in/api/leads/email/callback",
+        {
+          batch: batchResults,
+          batchNumber: batchIndex + 1,
+          totalBatches: batches.length,
+        }
+      );
       console.log(`Batch ${batchIndex + 1} results sent successfully`);
     } catch (error) {
       console.error("Error sending webhook:", error);
