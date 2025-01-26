@@ -359,7 +359,7 @@ app.post("/bulk-email-finder", async (req, res) => {
   console.log(`Batch processing started for ${domains.length} domains`);
 
   // Process domains in batches of 10
-  const batchSize = 5;
+  const batchSize = 10;
   const batches = [];
 
   for (let i = 0; i < domains.length; i += batchSize) {
@@ -371,7 +371,7 @@ app.post("/bulk-email-finder", async (req, res) => {
   for (let [batchIndex, batch] of batches.entries()) {
     console.log(`Processing batch ${batchIndex + 1} of ${batches.length}`);
 
-    // Process domains in current batch concurrenly
+    // Process domains in current batch concurrently
     const batchResults = await Promise.all(
       batch.map(async ({ _id, domain }) => {
         try {
