@@ -50,9 +50,20 @@ async function getPublicIP() {
   }
 }
 
+async function killAllBrowsers() {
+  try {
+    const browser = await puppeteer.launch();
+    const pages = await browser.pages();
+    await Promise.all(pages.map(page => page.close()));
+    await browser.close();
+  } catch (error) {
+    console.error("Error killing browsers:", error);
+  }
+}
+
 app.post("/single-email-finder", async (req, res) => {
   const { domain } = req.body;
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ headless: "new" });
   const page = await browser.newPage();
   const allEmails = new Set();
 
@@ -371,190 +382,199 @@ app.post("/bulk-email-finder", async (req, res) => {
   for (let [batchIndex, batch] of batches.entries()) {
     console.log(`Processing batch ${batchIndex + 1} of ${batches.length}`);
 
-    // Process domains in current batch concurrently
-    const batchResults = await Promise.all(
-      batch.map(async ({ _id, domain }) => {
-        try {
-          console.log(`Launching browser for domain: ${domain}`);
-          const browser = await puppeteer.launch({
-            headless: "new",
-            args: [
-              "--lang=en-US",
-              "--disable-setuid-sandbox",
-              "--no-sandbox",
-              "--disable-dev-shm-usage",
-              "--disable-gpu",
-              "--no-first-run",
-              "--no-zygote",
-              "--single-process",
-            ],
-            defaultViewport: {
-              width: 1920,
-              height: 1080,
-            },
-          });
-          const page = await browser.newPage();
-          const allEmails = new Set();
-
-          // Updated email regex
-          const emailRegex =
-            /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g;
-
-          // Scrape homepage
-          console.log(`Scraping homepage: ${domain}`);
-          await page.goto(domain, {
-            waitUntil: "networkidle2",
-            timeout: 30000,
-          });
-          await page.waitForNetworkIdle(5000);
-
-          // Get page content for emails and company description
-          const content = await page.content();
-          console.log(`Page content retrieved for ${domain}`);
-          const pageText = await page.evaluate(() => document.body.innerText);
-          const foundEmails = content.match(emailRegex) || [];
-          foundEmails.forEach((email) => allEmails.add(email));
-          console.log(`Found emails on homepage: ${foundEmails.length}`);
-
-          // Get company description from Gemini
-          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-          const descriptionPrompt = `Based on this website content, write 2-3 clear, concise descriptions (2-3 sentences each) about the company/website. Focus on their main business, value proposition, and unique features. Content: ${pageText.substring(
-            0,
-            2000
-          )}`;
-
-          const descriptionResult = await model.generateContent(
-            descriptionPrompt
-          );
-          const companyDescriptions = descriptionResult.response.text();
-          console.log(`Company descriptions generated for ${domain}`);
-
-          // Get internal links
-          const allLinks = await page.evaluate(() => {
-            const links = [];
-            const currentHost = window.location.hostname;
-
-            document.querySelectorAll("a").forEach((link) => {
-              try {
-                const href = link.href;
-                if (!href) return;
-                const url = new URL(href);
-                if (url.hostname === currentHost && href.startsWith("http")) {
-                  links.push({
-                    href: href,
-                    text: link.textContent.trim().toLowerCase(),
-                  });
-                }
-              } catch (e) {}
-            });
-            return links;
-          });
-          console.log(`Internal links found: ${allLinks.length}`);
-
-          // Determine pages to scrape
-          let urlsToScrape = [];
-          if (allLinks.length <= 3) {
-            urlsToScrape = allLinks.map((link) => link.href);
-            console.log(`Using all ${urlsToScrape.length} links for scraping`);
-          } else {
-            const linksPrompt = `Analyze these URLs and return exactly 3 URLs that are most likely to contain email addresses. Focus on pages like 'Contact', 'About', 'Team', etc.
-            Input URLs: ${JSON.stringify(allLinks)}
-            Return ONLY a JSON array of strings, nothing else. Example: ["https://example.com/contact","https://example.com/about","https://example.com/team"]`;
-
-            const linksResult = await model.generateContent(linksPrompt);
-            const response = linksResult.response.text();
-            urlsToScrape = JSON.parse(
-              response.replace(/```json\n?|\n?```/g, "").trim()
-            );
-            console.log(`Selected URLs for scraping: ${urlsToScrape.length}`);
-          }
-
-          // Scrape additional pages
-          for (const url of urlsToScrape) {
-            try {
-              console.log(`Scraping additional URL: ${url}`);
-              await page.goto(url, {
-                waitUntil: "networkidle2",
-                timeout: 30000,
-              });
-              await page.waitForNetworkIdle(5000);
-              const pageContent = await page.content();
-              const pageEmails = pageContent.match(emailRegex) || [];
-              pageEmails.forEach((email) => allEmails.add(email));
-              console.log(`Found emails on ${url}: ${pageEmails.length}`);
-            } catch (error) {
-              console.error(`Error scraping ${url}:`, error);
-            }
-          }
-
-          // Filter and validate emails
-          const validEmails = Array.from(allEmails).filter((email) => {
-            try {
-              return (
-                email.includes("@") &&
-                email.includes(".") &&
-                email.length > 4 &&
-                !email.includes("..") &&
-                !email.startsWith(".") &&
-                !email.endsWith(".") &&
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-              );
-            } catch {
-              return false;
-            }
-          });
-          console.log(
-            `Valid emails found for ${domain}: ${validEmails.length}`
-          );
-
-          await browser.close();
-          console.log(`Browser closed for ${domain}`);
-
-          return {
-            _id,
-            domain,
-            success: true,
-            emails: validEmails,
-            scrapedPages: [domain, ...urlsToScrape],
-            totalEmailsFound: validEmails.length,
-            companyDescriptions,
-          };
-        } catch (error) {
-          console.error(`Error processing ${domain}:`, error);
-          return {
-            _id,
-            domain,
-            success: false,
-            error: "Failed to scrape emails",
-            errorDetails: error.message,
-          };
-        }
-      })
-    );
-
-    // Send batch results to webhook
     try {
-      console.log(`Sending batch results for batch ${batchIndex + 1}`);
-      console.log(batchResults);
-      await axios.post(
-        "https://socialhardware.in/api/leads/email/callback",
-        {
+      // Process domains in current batch concurrently
+      const batchResults = await Promise.all(
+        batch.map(async ({ _id, domain }) => {
+          let browser;
+          try {
+            console.log(`Launching browser for domain: ${domain}`);
+            browser = await puppeteer.launch({
+              headless: "new",
+              args: [
+                "--lang=en-US",
+                "--disable-setuid-sandbox",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-zygote",
+                "--single-process",
+              ],
+              defaultViewport: {
+                width: 1920,
+                height: 1080,
+              },
+            });
+            const page = await browser.newPage();
+            const allEmails = new Set();
+
+            // Updated email regex
+            const emailRegex =
+              /[a-zA-Z0-9._%+\-!#$&'*/=?^`{|}~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?/g;
+
+            // Scrape homepage
+            console.log(`Scraping homepage: ${domain}`);
+            await page.goto(domain, {
+              waitUntil: "networkidle2",
+              timeout: 30000,
+            });
+            await page.waitForNetworkIdle(5000);
+
+            // Get page content for emails and company description
+            const content = await page.content();
+            console.log(`Page content retrieved for ${domain}`);
+            const pageText = await page.evaluate(() => document.body.innerText);
+            const foundEmails = content.match(emailRegex) || [];
+            foundEmails.forEach((email) => allEmails.add(email));
+            console.log(`Found emails on homepage: ${foundEmails.length}`);
+
+            // Get company description from Gemini
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+            const descriptionPrompt = `Based on this website content, write 2-3 clear, concise descriptions (2-3 sentences each) about the company/website. Focus on their main business, value proposition, and unique features. Content: ${pageText.substring(
+              0,
+              2000
+            )}`;
+
+            const descriptionResult = await model.generateContent(
+              descriptionPrompt
+            );
+            const companyDescriptions = descriptionResult.response.text();
+            console.log(`Company descriptions generated for ${domain}`);
+
+            // Get internal links
+            const allLinks = await page.evaluate(() => {
+              const links = [];
+              const currentHost = window.location.hostname;
+
+              document.querySelectorAll("a").forEach((link) => {
+                try {
+                  const href = link.href;
+                  if (!href) return;
+                  const url = new URL(href);
+                  if (url.hostname === currentHost && href.startsWith("http")) {
+                    links.push({
+                      href: href,
+                      text: link.textContent.trim().toLowerCase(),
+                    });
+                  }
+                } catch (e) {}
+              });
+              return links;
+            });
+            console.log(`Internal links found: ${allLinks.length}`);
+
+            // Determine pages to scrape
+            let urlsToScrape = [];
+            if (allLinks.length <= 3) {
+              urlsToScrape = allLinks.map((link) => link.href);
+              console.log(`Using all ${urlsToScrape.length} links for scraping`);
+            } else {
+              const linksPrompt = `Analyze these URLs and return exactly 3 URLs that are most likely to contain email addresses. Focus on pages like 'Contact', 'About', 'Team', etc.
+              Input URLs: ${JSON.stringify(allLinks)}
+              Return ONLY a JSON array of strings, nothing else. Example: ["https://example.com/contact","https://example.com/about","https://example.com/team"]`;
+
+              const linksResult = await model.generateContent(linksPrompt);
+              const response = linksResult.response.text();
+              urlsToScrape = JSON.parse(
+                response.replace(/```json\n?|\n?```/g, "").trim()
+              );
+              console.log(`Selected URLs for scraping: ${urlsToScrape.length}`);
+            }
+
+            // Scrape additional pages
+            for (const url of urlsToScrape) {
+              try {
+                console.log(`Scraping additional URL: ${url}`);
+                await page.goto(url, {
+                  waitUntil: "networkidle2",
+                  timeout: 30000,
+                });
+                await page.waitForNetworkIdle(5000);
+                const pageContent = await page.content();
+                const pageEmails = pageContent.match(emailRegex) || [];
+                pageEmails.forEach((email) => allEmails.add(email));
+                console.log(`Found emails on ${url}: ${pageEmails.length}`);
+              } catch (error) {
+                console.error(`Error scraping ${url}:`, error);
+              }
+            }
+
+            // Filter and validate emails
+            const validEmails = Array.from(allEmails).filter((email) => {
+              try {
+                return (
+                  email.includes("@") &&
+                  email.includes(".") &&
+                  email.length > 4 &&
+                  !email.includes("..") &&
+                  !email.startsWith(".") &&
+                  !email.endsWith(".") &&
+                  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+                );
+              } catch {
+                return false;
+              }
+            });
+            console.log(
+              `Valid emails found for ${domain}: ${validEmails.length}`
+            );
+
+            await browser.close();
+            console.log(`Browser closed for ${domain}`);
+
+            return {
+              _id,
+              domain,
+              success: true,
+              emails: validEmails,
+              scrapedPages: [domain, ...urlsToScrape],
+              totalEmailsFound: validEmails.length,
+              companyDescriptions,
+            };
+          } catch (error) {
+            if (browser) {
+              await browser.close();
+            }
+            console.error(`Error processing ${domain}:`, error);
+            return {
+              _id,
+              domain,
+              success: false,
+              error: "Failed to scrape emails",
+              errorDetails: error.message,
+            };
+          }
+        })
+      );
+
+      // Send batch results to webhook
+      try {
+        console.log(`Sending batch results for batch ${batchIndex + 1}`);
+        await axios.post("https://socialhardware.in/api/leads/email/callback", {
           batch: batchResults,
           batchNumber: batchIndex + 1,
           totalBatches: batches.length,
-        }
-      );
-      console.log(`Batch ${batchIndex + 1} results sent successfully`);
-    } catch (error) {
-      console.error("Error sending webhook:", error);
-    }
+        });
+        console.log(`Batch ${batchIndex + 1} results sent successfully`);
+      } catch (error) {
+        console.error("Error sending webhook:", error);
+      }
 
-    // Wait for 1 minute before processing next batch (if not the last batch)
-    if (batchIndex < batches.length - 1) {
-      console.log("Waiting 1 minute before next batch...");
-      await new Promise((resolve) => setTimeout(resolve, 60000));
+      // Kill all browser instances before moving to next batch
+      await killAllBrowsers();
+      console.log("All browser instances cleaned up");
+
+      // Wait for 1 minute before processing next batch (if not the last batch)
+      if (batchIndex < batches.length - 1) {
+        console.log("Waiting 1 minute before next batch...");
+        await new Promise((resolve) => setTimeout(resolve, 60000));
+      }
+    } catch (error) {
+      console.error(`Error processing batch ${batchIndex + 1}:`, error);
+      await killAllBrowsers();
     }
   }
 });
